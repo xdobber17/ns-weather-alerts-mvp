@@ -1,103 +1,116 @@
 // script.js
+// Assumes you have an element with id="alerts" to render alerts
+// and a button with id="refreshBtn" to reload data.
 
-// --- Configuration & Constants ---
-// In a real Vercel deployment, API keys should be stored as environment variables
-// accessible via process.env. For local development, use a .env file with a tool like 'dotenv'.
-const WEATHER_API_KEY = process.env.WEATHER_API_KEY || 'YOUR_EC_API_KEY_HERE'; // Replace or set env var
-const EC_API_BASE_URL = 'https://api.weather.gc.ca/weather/weather_forecasts/hourly'; // Example base URL for EC hourly data
-// NOTE: You may need to find the correct EC API endpoint and potentially use a specific location code or lat/lon.
-// Example search might involve: "Environment Canada weather API", "EC weather data access".
-// Public data might not require an API key, or it might be for specific services.
-// This example assumes a direct fetch might work for public data or a proxied endpoint.
+const RSS_URL_NS = "https://weather.gc.ca/rss/alerts/ns_e.xml"; // Environment Canada NS alerts RSS
+const ALERTS_CONTAINER_ID = "alerts";
 
-const TARGET_LOCATION_LAT = 45.0; // Example: Approximate latitude for Nova Scotia
-const TARGET_LOCATION_LON = -63.0; // Example: Approximate longitude for Nova Scotia
+function formatAlertItem(item) {
+  // Normalize an RSS item into a displayable alert
+  // item: object from parseRSS (title, pubDate, description/link)
+  const title = item.title || "Severe Weather Alert";
+  const date = item.pubDate ? new Date(item.pubDate).toLocaleString() : "";
+  const desc = item.description || item.content || "";
+  const link = item.link || item.guid || "";
 
-// --- Sample Data for Fallback ---
-const sampleWeatherData = {
-    location: "Halifax, NS",
-    temperature: "10°C",
-    condition: "Partly Cloudy",
-    humidity: "60%",
-    wind: "20 km/h NW",
-    pressure: "1012 hPa",
-    uvIndex: "3 (Moderate)"
-};
+  return `
+    <div class="alert-item">
+      <div class="alert-title">${escapeHtml(title)}</div>
+      <div class="alert-date">${escapeHtml(date)}</div>
+      <div class="alert-desc">${escapeHtml(desc)}</div>
+      ${link ? `<div class="alert-link"><a href="${escapeAttr(link)}" target="_blank" rel="noreferrer">More details</a></div>` : ""}
+    </div>
+  `;
+}
 
-const sampleAlerts = [
+function escapeHtml(s) {
+  if (!s) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+function escapeAttr(s) {
+  if (!s) return "";
+  return String(s)
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderAlerts(alertsHtml) {
+  const container = document.getElementById(ALERTS_CONTAINER_ID);
+  if (!container) return;
+  container.innerHTML = alertsHtml;
+}
+
+function renderSampleFallback() {
+  const sample = [
     {
-        id: "alert-ns-001",
-        level: "Warning",
-        message: "Strong winds expected along the Atlantic coast this evening. Small craft warning in effect.",
-        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(), // 3 hours ago
-        source: "Environment Canada"
-    },
-    {
-        id: "alert-ns-002",
-        level: "Information",
-        message: "Ideal lobster fishing conditions predicted for tomorrow morning.",
-        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(), // 12 hours ago
-        source: "Marine Forecast"
+      title: "Severe Thunderstorm Watch (Sample)",
+      pubDate: new Date().toUTCString(),
+      description: "Sample: Thunderstorms with potential damaging winds.",
+      link: "https://example.com/sample-alert"
     }
-];
-
-// --- DOM Elements ---
-const weatherDisplay = document.getElementById('weather-display');
-const alertLog = document.getElementById('alert-log');
-
-// --- Helper Functions ---
-
-/**
- * Safely gets a nested property from an object.
- * @param {object} obj - The object to traverse.
- * @param {string[]} path - Array of keys.
- * @param {*} defaultValue - Value to return if path not found.
- * @returns {*} The value at the path or the default value.
- */
-function getNested(obj, path, defaultValue = 'N/A') {
-    return path.reduce((acc, key) => (acc && acc[key] !== undefined) ? acc[key] : defaultValue, obj);
+  ];
+  const html = sample.map(formatAlertItem).join("");
+  renderAlerts(html);
 }
 
-/**
- * Formats temperature.
- * @param {number} tempC - Temperature in Celsius.
- * @returns {string} Formatted temperature string.
- */
-function formatTemperature(tempC) {
-    return `${tempC.toFixed(1)}°C`;
+async function parseRSS(text) {
+  // Very lightweight RSS parser for limited scope
+  // Returns array of items with title, pubDate, description, link
+  const items = [];
+  // Try to parse as XML
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(text, "text/xml");
+  const itemNodes = doc.querySelectorAll("item");
+  itemNodes.forEach((node) => {
+    const title = node.querySelector("title")?.textContent;
+    const pubDate = node.querySelector("pubDate")?.textContent;
+    const description = node.querySelector("description")?.textContent;
+    const link = node.querySelector("link")?.textContent;
+    items.push({ title, pubDate, description, link });
+  });
+  // If nothing parsed, return empty
+  return items;
 }
 
-/**
- * Formats wind speed.
- * @param {number} speedKph - Speed in km/h.
- * @param {string} direction - Wind direction.
- * @returns {string} Formatted wind string.
- */
-function formatWind(speedKph, direction) {
-    return `${speedKph.toFixed(0)} km/h ${direction}`;
-}
-
-/**
- * Formats pressure.
- * @param {number} pressureHpa - Pressure in hPa.
- * @returns {string} Formatted pressure string.
- */
-function formatPressure(pressureHpa) {
-    return `${pressureHpa.toFixed(0)} hPa`;
-}
-
-
-// --- Core Functions ---
-
-/**
- * Renders the current weather data to the page.
- * @param {object} data - Weather data object.
- */
-function displayWeather(data) {
-    if (!weatherDisplay) {
-        console.error("Weather display element not found.");
-        return;
+async function loadAlerts() {
+  // Try real RSS
+  try {
+    const resp = await fetch(RSS_URL_NS, { cache: "no-store" });
+    if (!resp.ok) throw new Error("RSS fetch failed");
+    const text = await resp.text();
+    const items = await parseRSS(text);
+    if (items && items.length > 0) {
+      const html = items.map(formatAlertItem).join("");
+      renderAlerts(html);
+      return;
     }
-    weatherDisplay.innerHTML = `
-        <p>Location: <strong>${data.location}</strong></p>
-        <p>
+    // If no items found, fallback to sample
+    renderSampleFallback();
+  } catch (e) {
+    // Fallback to sample data
+    renderSampleFallback();
+  }
+}
+
+// Initialize
+document.addEventListener("DOMContentLoaded", () => {
+  // Initial load
+  loadAlerts();
+
+  // Wire up refresh
+  const btn = document.getElementById("refreshBtn");
+  if (btn) {
+    btn.addEventListener("click", () => {
+      // Optional UX: disable button briefly to indicate loading
+      btn.disabled = true;
+      btn.textContent = "Refreshing...";
+      loadAlerts().finally(() => {
+        btn.disabled = false;
+        btn.textContent = "Refresh Alerts";
+      });
+    });
+  }
+});

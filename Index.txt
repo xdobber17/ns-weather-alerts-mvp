@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lobster Weather Alerts MVP - Nova Scotia</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Favicon Placeholder -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦞</text></svg>" type="image/svg+xml" />
+</head>
+<body>
+    <header>
+        <h1>Lobster Weather Alerts</h1>
+        <p>Your hyper-local, Nova Scotian lobster-approved weather updates.</p>
+    </header>
+
+    <main>
+        <section id="current-weather">
+            <h2>Current Conditions</h2>
+            <div id="weather-display">
+                <p>Loading local weather data from Environment Canada...</p>
+            </div>
+        </section>
+
+        <section id="alerts">
+            <h2>Active Alerts</h2>
+            <div id="alert-log">
+                <p>Checking for active alerts...</p>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Lobster Corp. All rights reserved. Proudly hosted on Vercel.</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

@@ -1,27 +1,17 @@
 // script.js
-// Assumes you have an element with id="alerts" to render alerts
-// and a button with id="refreshBtn" to reload data.
+// Goal: fetch Nova Scotia severe weather alerts from Environment Canada, parse RSS/XML when possible,
+// fallback to sample data, with a refresh button and a loading spinner.
 
-const RSS_URL_NS = "https://weather.gc.ca/rss/alerts/ns_e.xml"; // Environment Canada NS alerts RSS
+const NS_FEED_URLS = [
+  "https://weather.gc.ca/rss/alerts/ns_e.xml", // Environment Canada NS alerts (RSS)
+  // Additional fallback feed candidates (if available)
+  "https://weather.gc.ca/rss/alerts/ns_w.xml",
+  // Generic warnings page as last-resort (may require HTML parsing)
+  "https://weather.gc.ca/warnings/report_e.xml"
+];
+
 const ALERTS_CONTAINER_ID = "alerts";
-
-function formatAlertItem(item) {
-  // Normalize an RSS item into a displayable alert
-  // item: object from parseRSS (title, pubDate, description/link)
-  const title = item.title || "Severe Weather Alert";
-  const date = item.pubDate ? new Date(item.pubDate).toLocaleString() : "";
-  const desc = item.description || item.content || "";
-  const link = item.link || item.guid || "";
-
-  return `
-    <div class="alert-item">
-      <div class="alert-title">${escapeHtml(title)}</div>
-      <div class="alert-date">${escapeHtml(date)}</div>
-      <div class="alert-desc">${escapeHtml(desc)}</div>
-      ${link ? `<div class="alert-link"><a href="${escapeAttr(link)}" target="_blank" rel="noreferrer">More details</a></div>` : ""}
-    </div>
-  `;
-}
+const LOADER_ID = "alerts-loader";
 
 function escapeHtml(s) {
   if (!s) return "";
@@ -37,18 +27,34 @@ function escapeAttr(s) {
     .replace(/'/g, "&#39;");
 }
 
-function renderAlerts(alertsHtml) {
+function formatAlertItem(item) {
+  const title = item.title || "Severe Weather Alert";
+  const date = item.pubDate ? new Date(item.pubDate).toLocaleString() : "";
+  const desc = item.description || item.content || "";
+  const link = item.link || item.guid || "";
+
+  return `
+    <div class="alert-item">
+      <div class="alert-title">${escapeHtml(title)}</div>
+      <div class="alert-date">${escapeHtml(date)}</div>
+      <div class="alert-desc">${escapeHtml(desc)}</div>
+      ${link ? `<div class="alert-link"><a href="${escapeAttr(link)}" target="_blank" rel="noreferrer">More details</a></div>` : ""}
+    </div>
+  `;
+}
+
+function renderAlerts(html) {
   const container = document.getElementById(ALERTS_CONTAINER_ID);
   if (!container) return;
-  container.innerHTML = alertsHtml;
+  container.innerHTML = html;
 }
 
 function renderSampleFallback() {
   const sample = [
     {
-      title: "Severe Thunderstorm Watch (Sample)",
+      title: "Severe Weather (Sample)",
       pubDate: new Date().toUTCString(),
-      description: "Sample: Thunderstorms with potential damaging winds.",
+      description: "Sample: Nova Scotia weather alert. Verify feed availability.",
       link: "https://example.com/sample-alert"
     }
   ];
@@ -56,43 +62,50 @@ function renderSampleFallback() {
   renderAlerts(html);
 }
 
-async function parseRSS(text) {
-  // Very lightweight RSS parser for limited scope
-  // Returns array of items with title, pubDate, description, link
+function parseRSS(text) {
   const items = [];
-  // Try to parse as XML
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(text, "text/xml");
-  const itemNodes = doc.querySelectorAll("item");
-  itemNodes.forEach((node) => {
-    const title = node.querySelector("title")?.textContent;
-    const pubDate = node.querySelector("pubDate")?.textContent;
-    const description = node.querySelector("description")?.textContent;
-    const link = node.querySelector("link")?.textContent;
-    items.push({ title, pubDate, description, link });
-  });
-  // If nothing parsed, return empty
+  try {
+    const doc = new DOMParser().parseFromString(text, "text/xml");
+    const nodeItems = doc.querySelectorAll("item");
+    nodeItems.forEach((node) => {
+      const title = node.querySelector("title")?.textContent;
+      const pubDate = node.querySelector("pubDate")?.textContent;
+      const description = node.querySelector("description")?.textContent;
+      const link = node.querySelector("link")?.textContent;
+      items.push({ title, pubDate, description, link });
+    });
+  } catch (e) {
+    // ignore parse errors
+  }
   return items;
 }
 
 async function loadAlerts() {
-  // Try real RSS
-  try {
-    const resp = await fetch(RSS_URL_NS, { cache: "no-store" });
-    if (!resp.ok) throw new Error("RSS fetch failed");
-    const text = await resp.text();
-    const items = await parseRSS(text);
-    if (items && items.length > 0) {
-      const html = items.map(formatAlertItem).join("");
-      renderAlerts(html);
-      return;
+  // Show loader
+  const loader = document.getElementById(LOADER_ID);
+  if (loader) loader.style.display = "inline-block";
+
+  for (const url of NS_FEED_URLS) {
+    try {
+      const resp = await fetch(url, { cache: "no-store" });
+      if (!resp.ok) continue;
+      const text = await resp.text();
+
+      const items = parseRSS(text);
+      if (items && items.length > 0) {
+        const html = items.map(formatAlertItem).join("");
+        renderAlerts(html);
+        if (loader) loader.style.display = "none";
+        return;
+      }
+    } catch (e) {
+      // try next URL
     }
-    // If no items found, fallback to sample
-    renderSampleFallback();
-  } catch (e) {
-    // Fallback to sample data
-    renderSampleFallback();
   }
+
+  // If we reach here, nothing loaded; use sample
+  renderSampleFallback();
+  if (loader) loader.style.display = "none";
 }
 
 // Initialize
@@ -104,9 +117,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const btn = document.getElementById("refreshBtn");
   if (btn) {
     btn.addEventListener("click", () => {
-      // Optional UX: disable button briefly to indicate loading
       btn.disabled = true;
-      btn.textContent = "Refreshing...";
+      btn.textContent = "Refreshing…";
       loadAlerts().finally(() => {
         btn.disabled = false;
         btn.textContent = "Refresh Alerts";

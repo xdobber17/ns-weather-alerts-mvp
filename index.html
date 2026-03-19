@@ -11,11 +11,13 @@
     .alert-desc { margin-bottom: 0.25rem; }
     .alert-link a { color: #1a0dab; text-decoration: none; }
     #refreshBtn { padding: 0.5rem 1rem; font-size: 1rem; }
+    #alerts-loader { display: none; margin-left: 6px; }
   </style>
 </head>
 <body>
   <h1>NS Severe Weather Alerts</h1>
   <button id="refreshBtn">Refresh Alerts</button>
+  <span id="alerts-loader" aria-label="loading" role="status">Loading…</span>
   <div id="alerts" aria-live="polite" style="margin-top: 1rem;">
     <!-- Alerts will be injected here -->
   </div>
